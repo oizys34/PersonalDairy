@@ -5,7 +5,11 @@ const Diary = require('../models/Diary');
 const createDiary = async (req, res) => {
     try {
  
-        const diary = await Diary.create(req.body);
+        const diaryData = { ...req.body };
+        if (req.user) {
+            diaryData.user = req.user._id || req.user.id; // Attach the logged-in user's ID
+        }
+        const diary = await Diary.create(diaryData);
  
         res.status(201).json(diary);
  
@@ -21,7 +25,11 @@ const createDiary = async (req, res) => {
 const getDiaries = async (req, res) => {
     try {
  
-        const diaries = await Diary.find();
+        const query = {};
+        if (req.user) {
+            query.user = req.user._id || req.user.id; // Fetch only this user's diaries
+        }
+        const diaries = await Diary.find(query);
  
         res.json(diaries);
  

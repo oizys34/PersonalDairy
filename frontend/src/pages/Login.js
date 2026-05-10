@@ -1,83 +1,82 @@
 import React, { useState } from 'react';
- 
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
- 
+import API_BASE_URL from '../config/api';
+
 function Login() {
- 
+    const navigate = useNavigate();
+
     const [formData, setFormData] = useState({
         email: '',
         password: ''
     });
- 
+
     const handleChange = (e) => {
- 
+
         setFormData({
             ...formData,
             [e.target.name]: e.target.value
         });
     };
- 
+
     const handleSubmit = async (e) => {
- 
-        e.preventDefault();
- 
-        try {
- 
-            const res = await axios.post(
-                'https://fluffy-spork-7v9g6g5jxvqw3qq4-5000.app.github.dev/api/auth/login',
-                formData
-            );
- 
-            localStorage.setItem(
-                'token',
-                res.data.token
-            );
- 
-            alert('Login Success');
- 
-            console.log(res.data);
- 
-        } catch (error) {
- 
-            const message = error.response?.data?.message || error.message || 'Login failed';
-            alert(message);
-            console.error(error);
-        }
-    };
- 
+
+    e.preventDefault();
+
+    try {
+
+        const res = await axios.post(
+            `${API_BASE_URL}/api/auth/login`,
+            formData
+        );
+
+        localStorage.setItem(
+            'token',
+            res.data.token
+        );
+
+        alert('Login Success');
+
+        navigate('/dashboard');
+
+    } catch (error) {
+
+        alert(error.response?.data?.message || 'Login failed');
+    }
+};
     return (
- 
+
         <div className="container">
- 
+
             <form
                 className="form"
                 onSubmit={handleSubmit}
->
- 
+            >
+
                 <h1>Login</h1>
- 
+
                 <input
                     type="email"
                     name="email"
                     placeholder="Email"
                     onChange={handleChange}
                 />
- 
+
                 <input
                     type="password"
                     name="password"
                     placeholder="Password"
                     onChange={handleChange}
                 />
- 
+
                 <button type="submit">
                     Login
-</button>
- 
+                </button>
+
             </form>
- 
+
         </div>
     );
 }
- 
+
 export default Login;
