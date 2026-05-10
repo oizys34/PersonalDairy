@@ -1,111 +1,24 @@
-const { execFileSync } = require('child_process');
-const dns = require('dns').promises;
 const mongoose = require('mongoose');
-
-const runPowerShellJson = (script, arg) => {
-    const output = execFileSync('powershell.exe', [
-        '-NoProfile',
-        '-Command',
-        `& { param($name) ${script} }`,
-        arg
-    ], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe']
-    }).trim();
-
-    return output ? JSON.parse(output) : null;
-};
-
-const resolveSrvWithWindowsDns = (hostname) => {
-    const srvName = `_mongodb._tcp.${hostname}`;
-
-    const srvRecords = runPowerShellJson(
-        '$ErrorActionPreference = "Stop"; Resolve-DnsName -Type SRV $name | Select-Object NameTarget,Port | ConvertTo-Json -Compress',
-        srvName
-    );
-
-    const txtRecords = runPowerShellJson(
-        '$ErrorActionPreference = "Stop"; Resolve-DnsName -Type TXT $name | ForEach-Object { $_.Strings -join "" } | ConvertTo-Json -Compress',
-        hostname
-    );
-
-    const srvList = Array.isArray(srvRecords) ? srvRecords : [srvRecords];
-    const txtList = Array.isArray(txtRecords) ? txtRecords : [txtRecords].filter(Boolean);
-
-    return {
-        hosts: srvList.map((record) => `${record.NameTarget.replace(/\.$/, '')}:${record.Port}`),
-        txtOptions: txtList
-    };
-};
-
-const buildStandardMongoUrl = (srvUrl) => {
-    const url = new URL(srvUrl);
-    const { hosts, txtOptions } = resolveSrvWithWindowsDns(url.hostname);
-
-    if (!hosts.length) {
-        throw new Error(`No MongoDB SRV records found for ${url.hostname}`);
-    }
-
-    const params = new URLSearchParams(url.searchParams);
-
-    txtOptions.forEach((optionString) => {
-        const txtParams = new URLSearchParams(optionString);
-
-        txtParams.forEach((value, key) => {
-            if (!params.has(key)) {
-                params.set(key, value);
-            }
-        });
-    });
-
-    if (!params.has('tls') && !params.has('ssl')) {
-        params.set('tls', 'true');
-    }
-
-    const password = url.password ? `:${url.password}` : '';
-    const auth = url.username ? `${url.username}${password}@` : '';
-    const query = params.toString();
-
-    return `mongodb://${auth}${hosts.join(',')}${url.pathname}${query ? `?${query}` : ''}`;
-};
-
-const getMongoUrl = async () => {
-    const mongoUrl = process.env.MONGODB_URL || process.env.MONGO_URL;
-
-    if (!mongoUrl) {
-        throw new Error('Missing MongoDB URL. Add MONGO_URL to backend/.env.');
-    }
-
-    if (!mongoUrl.startsWith('mongodb+srv://')) {
-        return mongoUrl;
-    }
-
-    const url = new URL(mongoUrl);
-
-    try {
-        await dns.resolveSrv(`_mongodb._tcp.${url.hostname}`);
-        return mongoUrl;
-    } catch (error) {
-        if (process.platform !== 'win32' || error.code !== 'ECONNREFUSED') {
-            throw error;
-        }
-
-        console.warn('Node DNS refused the MongoDB SRV lookup; using Windows DNS fallback.');
-        return buildStandardMongoUrl(mongoUrl);
-    }
-};
 
 const connectDB = async () => {
     try {
-        const mongoUrl = await getMongoUrl();
+        const mongoUrl = process.env.MONGODB_URL || process.env.MONGO_URL;
 
+        if (!mongoUrl) {
+            throw new Error('Missing MongoDB URL in environment variables.');
+        }
+
+        console.log('Attempting to connect to MongoDB...');
+
+        // Standard Mongoose connection (Works perfectly on Azure Linux)
         await mongoose.connect(mongoUrl, {
-            serverSelectionTimeoutMS: 10000
+            serverSelectionTimeoutMS: 10000 // 10 seconds timeout
         });
 
-        console.log('MongoDB Connected');
+        console.log('MongoDB Connected successfully');
     } catch (error) {
         console.error('MongoDB connection failed:', error.message);
+        // Important: Exit with failure so Azure knows the container crashed
         process.exit(1);
     }
 };
